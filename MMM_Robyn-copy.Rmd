@@ -1,0 +1,335 @@
+
+
+```{r}
+library(readr)
+df <- read_csv("outer_mmm_feed_weekly_metrics_20220929.csv")
+
+```
+
+```{r}
+df1 <- df[c(4,2,3,5:12,14,17,20,23,26,29,30,31,32,34,36,38,40,42,43,45,46:48,50,51:54)]
+# improved correlation matrix
+library(corrplot)
+# do not edit
+corrplot2 <- function(data,
+                      method = "pearson",
+                      sig.level = 0.05,
+                      order = "original",
+                      diag = FALSE,
+                      type = "upper",
+                      tl.srt = 90,
+                      number.font = 0.6,
+                      number.cex = 0.6,
+                      mar = c(0, 0, 0, 0)) {
+  library(corrplot)
+  data_incomplete <- data
+  data <- data[complete.cases(data), ]
+  mat <- cor(data, method = method)
+  cor.mtest <- function(mat, method) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat <- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+      for (j in (i + 1):n) {
+        tmp <- cor.test(mat[, i], mat[, j], method = method)
+        p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+      }
+    }
+    colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+    p.mat
+  }
+  p.mat <- cor.mtest(data, method = method)
+  col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+  corrplot(mat,
+    method = "color", col = col(200), number.font = number.font,
+    mar = mar, number.cex = number.cex,
+    type = type, order = order,
+    addCoef.col = "black", # add correlation coefficient
+    tl.col = "black", tl.srt = tl.srt, # rotation of text labels
+    # combine with significance level
+    p.mat = p.mat, sig.level = sig.level, insig = "blank",
+    # hide correlation coefficients on the diagonal
+    diag = diag
+  )
+}
+png(height=1200, width=1500, pointsize=15, file="sale.png")
+corrplot2(
+  data = df1,
+  method = "pearson",
+  sig.level = 0.05,
+  order = "original",
+  diag = FALSE,
+  type = "upper",
+  tl.srt = 75
+)
+```
+
+
+
+```{r}
+df$WEEK <- as.Date(df$WEEK,"%Y/%m/%d")
+#df <- df[,c(1,4,7,10,11,14,17,20,23,29,30,31,32,36,38,40,42,43,45,47,50,52:54)]
+df <- df[,-c(2,3,5,6,8,9,12)]
+```
+
+### robyn parkage
+```{r}
+#### Step 0: Setup environment
+
+## Install, load, and check (latest) version.
+## Install the stable version from CRAN.
+#install.packages("Robyn")
+## Install the dev version from GitHub
+#install.packages("remotes") # Install remotes first if you haven't already
+#remotes::install_github("facebookexperimental/Robyn/R")
+library(Robyn)
+library("reticulate")
+```
+
+```{r}
+conda_create("r-reticulate")
+conda_install("r-reticulate", "nevergrad", pip = TRUE)
+use_condaenv("r-reticulate")
+```
+```{r}
+
+robyn_object <- "~/Desktop/MMM"
+```
+
+```{r}
+
+InputCollect <- robyn_inputs(
+  dt_input = df,
+  dt_holidays = dt_prophet_holidays,
+  date_var = "WEEK", # date format must be "2020-01-01"
+  dep_var = "NET_SALES", # there should be only one dependent variable
+  dep_var_type = "revenue", # "revenue" (ROI) or "conversion" (CPA)
+  prophet_vars = c("trend", "season", "holiday"), # "trend","season", "weekday" & "holiday"
+  prophet_country = "US", # input one country. dt_prophet_holidays includes 59 countries by default
+  context_vars = c("AVG_DISCOUNT", "COLLECTIONS_SOLD","DUM_PROMO"), # e.g. competitors, discount, unemployment etc
+  paid_media_spends = c("FB_SPEND", "GOOGLE_SPEND", "YOUTUBE_SPEND", "TIKTOK_SPEND", "OOH_SPEND", "NEXTDOOR_SPEND","REDDIT_SPEND","NEWSLETTER_SPEND","CORDLESS_SPEND","ADROLL_SPEND", "AFFILIATE_SPEND", "PODCAST_SPEND", "SXM_SPEND", "STREAMING_SPEND", "MYMOVE_SPEND","PRINT_SPEND", "LINEAR_TV_SPEND", "CTV_SPEND", "DIRECT_MAIL_SPEND" ), # mandatory input
+  paid_media_vars = c("FB_IMPRESSIONS", "GOOGLE_IMPRESSIONS", "YOUTUBE_IMPRESSIONS", "TIKTOK_IMPRESSIONS", "OOH_IMPRESSIONS", "NEXTDOOR_SPEND","REDDIT_SPEND","NEWSLETTER_SPEND","CORDLESS_SPEND","ADROLL_IMPRESSIONS", "AFFILIATE_SPEND", "PODCAST_IMPRESSIONS", "SXM_SPEND", "STREAMING_IMPRESSIONS", "MYMOVE_SPEND","PRINT_IMPRESSIONS", "LINEAR_TV_SPEND", "CTV_SPEND", "DIRECT_MAIL_SPEND"), # mandatory.
+  # paid_media_vars must have same order as paid_media_spends. Use media exposure metrics like
+  # impressions, GRP etc. If not applicable, use spend instead.
+  #organic_vars =, # marketing activity without media spend
+  # factor_vars = c("events"), # force variables in context_vars or organic_vars to be categorical
+  window_start = "2019-03-11",
+  window_end = "2022-09-19",
+  adstock = "geometric" # geometric, weibull_cdf or weibull_pdf.
+)
+print(InputCollect)
+
+hyper_names(adstock = InputCollect$adstock, all_media = InputCollect$all_media)
+
+
+```
+
+```{r}
+plot_adstock(plot = FALSE)
+plot_saturation(plot = FALSE)
+```
+
+```{r}
+hyperparameters <- list(
+ADROLL_SPEND_alphas = c(0.5, 3),
+ADROLL_SPEND_gammas = c(0.3,1),
+ADROLL_SPEND_thetas = c(0,0.3),     
+AFFILIATE_SPEND_alphas = c(0.5, 3),
+AFFILIATE_SPEND_gammas =  c(0.3,1), 
+AFFILIATE_SPEND_thetas =  c(0,0.3), 
+CORDLESS_SPEND_alphas  = c(0.5, 3),
+CORDLESS_SPEND_gammas = c(0.3,1),
+CORDLESS_SPEND_thetas = c(0,0.3),
+CTV_SPEND_alphas = c(0.5, 3),  
+CTV_SPEND_gammas = c(0.3,1),        
+CTV_SPEND_thetas = c(0,0.3),       
+DIRECT_MAIL_SPEND_alphas = c(0.5, 3),
+DIRECT_MAIL_SPEND_gammas = c(0.3,1),
+DIRECT_MAIL_SPEND_thetas = c(0,0.3),
+FB_SPEND_alphas = c(0.5, 3),         
+FB_SPEND_gammas  = c(0.3,1),        
+FB_SPEND_thetas  = c(0,0.3),        
+GOOGLE_SPEND_alphas = c(0.5, 3),      
+GOOGLE_SPEND_gammas  = c(0.3,1),   
+GOOGLE_SPEND_thetas  = c(0,0.3),    
+LINEAR_TV_SPEND_alphas  = c(0.5, 3), 
+LINEAR_TV_SPEND_gammas   = c(0.3,1),
+LINEAR_TV_SPEND_thetas   = c(0,0.3),
+MYMOVE_SPEND_alphas = c(0.5, 3),    
+MYMOVE_SPEND_gammas = c(0.3,1),
+MYMOVE_SPEND_thetas = c(0,0.3),     
+NEWSLETTER_SPEND_alphas = c(0.5, 3),
+NEWSLETTER_SPEND_gammas  = c(0.3,1),
+NEWSLETTER_SPEND_thetas = c(0,0.3),
+NEXTDOOR_SPEND_alphas  = c(0.5, 3), 
+NEXTDOOR_SPEND_gammas = c(0.3,1),   
+NEXTDOOR_SPEND_thetas  = c(0,0.3),  
+OOH_SPEND_alphas  = c(0.5, 3),       
+OOH_SPEND_gammas  = c(0.3,1),      
+OOH_SPEND_thetas  = c(0,0.3),       
+PODCAST_SPEND_alphas = c(0.5, 3),    
+PODCAST_SPEND_gammas = c(0.3,1),   
+PODCAST_SPEND_thetas = c(0,0.3),   
+PRINT_SPEND_alphas  = c(0.5, 3),     
+PRINT_SPEND_gammas  = c(0.3,1),     
+PRINT_SPEND_thetas  = c(0,0.3),    
+REDDIT_SPEND_alphas = c(0.5, 3),    
+REDDIT_SPEND_gammas = c(0.3,1),    
+REDDIT_SPEND_thetas = c(0,0.3),   
+STREAMING_SPEND_alphas = c(0.5, 3),  
+STREAMING_SPEND_gammas = c(0.3,1), 
+STREAMING_SPEND_thetas = c(0,0.3), 
+SXM_SPEND_alphas   = c(0.5, 3),     
+SXM_SPEND_gammas   = c(0.3,1),     
+SXM_SPEND_thetas   = c(0,0.3),      
+TIKTOK_SPEND_alphas = c(0.5, 3),     
+TIKTOK_SPEND_gammas = c(0.3,1),     
+TIKTOK_SPEND_thetas  = c(0,0.3),    
+YOUTUBE_SPEND_alphas = c(0.5, 3),    
+YOUTUBE_SPEND_gammas = c(0.3,1),    
+YOUTUBE_SPEND_thetas = c(0,0.3)
+)
+InputCollect <- robyn_inputs(InputCollect = InputCollect, hyperparameters = hyperparameters)
+print(InputCollect)
+```
+```{r}
+if (length(InputCollect$exposure_vars) > 0) {
+  InputCollect$modNLS$plots$FB_IMPRESSIONS
+  InputCollect$modNLS$plots$GOOGLE_IMPRESSIONS
+}
+```
+```{r}
+
+```
+
+
+```{r}
+OutputModels <- robyn_run(
+  InputCollect = InputCollect, # feed in all model specification
+  cores = NULL, # NULL defaults to max available - 1
+  # add_penalty_factor = FALSE, # Untested feature. Use with caution.
+  iterations = 2000, # 2000 recommended for the dummy dataset with no calibration
+  trials = 5, # 5 recommended for the dummy dataset
+  outputs = FALSE # outputs = FALSE disables direct model output - robyn_outputs()
+)
+print(OutputModels)
+```
+
+```{r}
+OutputModels$convergence$moo_distrb_plot
+OutputModels$convergence$moo_cloud_plot
+
+
+```
+```{r}
+OutputCollect <- robyn_outputs(
+  InputCollect, OutputModels,
+  # pareto_fronts = "auto",
+  calibration_constraint = 0.05, # range c(0.01, 0.1) & default at 0.1
+  csv_out = "all", # "pareto", "all", or NULL (for none)
+  clusters = TRUE, # Set to TRUE to cluster similar models by ROAS. See ?robyn_clusters
+  # min_candidates = 100, # top pareto models for clustering. default to 100
+  plot_pareto = TRUE, # Set to FALSE to deactivate plotting and saving model one-pagers
+  plot_folder = robyn_object, # path for plots export
+  export = TRUE # this will create files locally
+)
+print(OutputCollect)
+
+```
+
+
+
+```{r}
+select_model <- "1_154_1" # Pick one of the models from OutputCollect to proceed
+
+#### Since 3.7.1: JSON export and import (faster and lighter than RDS files)
+ExportedModel <- robyn_write(InputCollect, OutputCollect, select_model)
+print(ExportedModel)
+```
+```{r}
+myModelPlot <- robyn_onepagers(InputCollect,OutputCollect,select_model = "1_154_1")
+```
+
+```{r}
+myModelPlot$`1_154_1`$patches$plots[[6]]
+```
+
+
+```{r}
+AllocatorCollect1 <- robyn_allocator(
+  InputCollect = InputCollect,
+  OutputCollect = OutputCollect,
+  select_model = select_model,
+  scenario = "max_historical_response",
+  channel_constr_low = 0.7,
+  channel_constr_up = 2,
+  export = TRUE,
+  date_min = "2019-03-11",
+  date_max = "2022-09-19"
+)
+print(AllocatorCollect1)
+plot(AllocatorCollect1)
+```
+```{r}
+AllocatorCollect2 <- robyn_allocator(
+  InputCollect = InputCollect,
+  OutputCollect = OutputCollect,
+  select_model = select_model,
+  scenario = "max_response_expected_spend",
+  channel_constr_low = 0.7,
+  channel_constr_up = 2,
+  expected_spend = 1000000, # Total spend to be simulated
+  expected_spend_days = 7, # Duration of expected_spend in days
+  export = TRUE
+)
+print(AllocatorCollect2)
+AllocatorCollect2$dt_optimOut
+```
+
+```{r}
+# Pick any media variable: InputCollect$all_media
+select_media <- "FB_SPEND"
+# For paid_media_spends set metric_value as your optimal spend
+metric_value <- AllocatorCollect1$dt_optimOut$optmSpendUnit[
+  AllocatorCollect1$dt_optimOut$channels == select_media
+]; metric_value
+# # For paid_media_vars and organic_vars, manually pick a value
+# metric_value <- 10000
+
+if (TRUE) {
+  optimal_response_allocator <- AllocatorCollect1$dt_optimOut$optmResponseUnit[
+    AllocatorCollect1$dt_optimOut$channels == select_media
+  ]
+  optimal_response <- robyn_response(
+    InputCollect = InputCollect,
+    OutputCollect = OutputCollect,
+    select_model = select_model,
+    select_build = 0,
+    media_metric = select_media,
+    metric_value = metric_value
+  )
+  plot(optimal_response$plot)
+  if (length(optimal_response_allocator) > 0) {
+    cat("QA if results from robyn_allocator and robyn_response agree: ")
+    cat(round(optimal_response_allocator) == round(optimal_response$response), "( ")
+    cat(optimal_response$response, "==", optimal_response_allocator, ")\n")
+  }
+}
+
+```
+```{r}
+# Get response for 80k from result saved in robyn_object
+Spend1 <- 60000
+Response1 <- robyn_response(
+  InputCollect = InputCollect,
+  OutputCollect = OutputCollect,
+  select_model = select_model,
+  media_metric = "FB_SPEND",
+  metric_value = Spend1
+)
+Response1$response / Spend1 # ROI for search 80k
+Response1$plot
+
+```
+
